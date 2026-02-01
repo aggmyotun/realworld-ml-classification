@@ -1,0 +1,117 @@
+import pandas as pd
+from scipy.io import arff
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, roc_auc_score
+
+#Load the Data
+data, meta = arff.loadarff(r'D:\ML\1year.arff')
+df = pd.DataFrame(data)   # Convert the data into a pandas DataFrame
+
+# Inspect Dataset
+print("Column names in the dataset:")
+print(df.columns)
+
+print("Distribution of the target column:")
+print(df['Attr64'].value_counts())
+
+# Check for missing values
+missing_data = df.isnull().sum()
+print("\nMissing values in each column:")
+print(missing_data)
+
+# Impute missing values 
+df.fillna(df.mean(), inplace=True)
+
+# One-hot encode categorical columns 
+df = pd.get_dummies(df)
+
+# Encode labels 
+label_encoder = LabelEncoder()
+df['Attr1'] = label_encoder.fit_transform(df['Attr1'])  
+
+# Standardize numerical features
+scaler = StandardScaler()
+numerical_columns = df.select_dtypes(include=['float64', 'int64']).columns
+df[numerical_columns] = scaler.fit_transform(df[numerical_columns])
+
+#Prepare the Data for Model Training
+X = df.drop('Attr64', axis=1)  # Drop the target column 
+y = df['Attr64']  # Target column
+
+# Split data into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Initialize models
+models = {
+    'Random Forest': RandomForestClassifier(class_weight='balanced', random_state=42),
+    'Logistic Regression': LogisticRegression(class_weight='balanced', random_state=42),
+    'Support Vector Machine (SVM)': SVC(probability=True, class_weight='balanced', random_state=42)
+}
+
+
+# Evaluate the Models
+# Ensure the target is binary
+threshold = 0.5  
+y_train = (y_train > threshold).astype(int)
+y_test = (y_test > threshold).astype(int)
+
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"{name} Accuracy: {accuracy:.4f}")
+    
+    # Classification report 
+    print(f"{name} Classification Report:\n{classification_report(y_test, y_pred)}")
+    
+    # Confusion Matrix
+    print(f"{name} Confusion Matrix:\n{confusion_matrix(y_test, y_pred)}")
+    
+    # ROC-AUC score 
+    print(f"{name} ROC-AUC: {roc_auc_score(y_test, model.predict_proba(X_test)[:, 1]):.4f}")
+    print("-" * 50)
+    
+
+# Hyperparameter grids for tuning
+param_grids = {
+    'Random Forest': {
+        'n_estimators': [50, 100, 200],
+        'max_depth': [None, 10, 20, 30],
+        'min_samples_split': [2, 5, 10]
+    },
+    'Logistic Regression': {
+        'C': [0.1, 1, 10],  
+        'solver': ['liblinear', 'saga']
+    },
+    'Support Vector Machine (SVM)': {  
+        'C': [0.1, 1, 10],
+        'kernel': ['linear', 'rbf'],
+        'gamma': ['scale', 'auto']
+    }
+}
+
+# GridSearch for each model
+for name, model in models.items():
+    print(f"\nTuning {name}...")
+    grid_search = GridSearchCV(model, param_grids[name], cv=5, n_jobs=-1, verbose=1)
+    grid_search.fit(X_train, y_train)
+    
+    print(f"Best parameters for {name}: {grid_search.best_params_}")
+    
+    # Evaluate the best model from GridSearchCV
+    best_model = grid_search.best_estimator_
+    y_pred = best_model.predict(X_test)
+    
+    # Accuracy and other evaluation metrics
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"Best {name} Accuracy: {accuracy:.4f}")
+    print(f"{name} Classification Report:\n{classification_report(y_test, y_pred)}")
+    print(f"{name} Confusion Matrix:\n{confusion_matrix(y_test, y_pred)}")
+    print(f"{name} ROC-AUC: {roc_auc_score(y_test, best_model.predict_proba(X_test)[:, 1]):.4f}")
+    print("-" * 50)
